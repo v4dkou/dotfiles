@@ -1,0 +1,5 @@
+/* Hide the top tab row when there is an active tab
+   but no inactive tabs. Intended for unstacked tabs. */
+#browser.tabs-top:has(#tabs-container .tab):not(:has(#tabs-container .tab:not(.active))) #header {
+    display: none !important;
+}

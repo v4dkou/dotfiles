@@ -1,0 +1,22 @@
+/* Increase tabs title font size */
+.linux .tab-position .tab .title {
+    font-size: 130%;
+}
+.vivaldi-v {
+    display: none!important;
+}
+#browser.menu-icon {
+    --menuWidth: 30px!important;
+}
+.toolbar-large .button-circularimage.button-cropimage.profile-popup button img {
+    width: 20px;
+    height: 20px;
+}
+
+.tab-position .tab .tab-header .favicon img {
+  filter: grayscale(100%) !important;
+}
+
+#tabs-container:hover .tab-position .tab .tab-header .favicon img {
+  filter: none !important;
+}

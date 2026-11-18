@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+
+import argparse
+import fcntl
+import os
+import select
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+
+from evdev import InputDevice, ecodes, list_devices
+
+
+def switch_workspace(direction: str) -> None:
+    command = "next" if direction == "left" else "prev"
+
+    try:
+        subprocess.run(
+            ["swaymsg", "workspace", command],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        print("swaymsg not found", file=sys.stderr, flush=True)
+    except subprocess.CalledProcessError as error:
+        print(f"swaymsg failed: {error}", file=sys.stderr, flush=True)
+
+
+@dataclass
+class GestureState:
+    threshold: int
+    max_vertical_ratio: float
+    timeout: float
+    button_held: bool = False
+    triggered: bool = False
+    expired: bool = False
+    accumulated_x: int = 0
+    accumulated_y: int = 0
+    started_at: float = 0.0
+
+    def handle(self, event) -> None:
+        if event.type == ecodes.EV_KEY and event.code == ecodes.BTN_MIDDLE:
+            if event.value == 1:
+                self.button_held = True
+                self.triggered = False
+                self.expired = False
+                self.accumulated_x = 0
+                self.accumulated_y = 0
+                self.started_at = time.monotonic()
+            elif event.value == 0:
+                self.button_held = False
+                self.triggered = False
+                self.expired = False
+            return
+
+        if not self.button_held or self.triggered or self.expired:
+            return
+
+        if time.monotonic() - self.started_at > self.timeout:
+            self.expired = True
+            return
+
+        if event.type != ecodes.EV_REL:
+            return
+
+        if event.code == ecodes.REL_X:
+            self.accumulated_x += event.value
+        elif event.code == ecodes.REL_Y:
+            self.accumulated_y += event.value
+        else:
+            return
+
+        horizontal = abs(self.accumulated_x)
+        vertical = abs(self.accumulated_y)
+
+        if horizontal < self.threshold:
+            return
+
+        if vertical > horizontal * self.max_vertical_ratio:
+            return
+
+        direction = "left" if self.accumulated_x < 0 else "right"
+        switch_workspace(direction)
+        self.triggered = True
+
+
+@dataclass
+class WatchedDevice:
+    device: InputDevice
+    gesture: GestureState
+
+    @property
+    def path(self) -> str:
+        return self.device.path
+
+
+def is_mouse_flick_device(device: InputDevice) -> bool:
+    caps = device.capabilities(absinfo=False)
+    keys = set(caps.get(ecodes.EV_KEY, ()))
+    relatives = set(caps.get(ecodes.EV_REL, ()))
+
+    return (
+        ecodes.BTN_MIDDLE in keys
+        and ecodes.REL_X in relatives
+        and ecodes.REL_Y in relatives
+    )
+
+
+def close_device(device: InputDevice) -> None:
+    try:
+        device.close()
+    except OSError:
+        pass
+
+
+def open_watched_device(path: str, args, require_mouse: bool) -> WatchedDevice | None:
+    device = InputDevice(path)
+
+    if require_mouse and not is_mouse_flick_device(device):
+        close_device(device)
+        return None
+
+    if not require_mouse and not is_mouse_flick_device(device):
+        print(
+            f"Warning: {path} does not advertise middle-button mouse movement",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    return WatchedDevice(
+        device=device,
+        gesture=GestureState(
+            threshold=args.threshold,
+            max_vertical_ratio=args.max_vertical_ratio,
+            timeout=args.timeout,
+        ),
+    )
+
+
+def runtime_lock_path() -> str:
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime_dir:
+        return os.path.join(runtime_dir, "sway-mouse-flick.lock")
+    return f"/tmp/sway-mouse-flick-{os.getuid()}.lock"
+
+
+def read_lock_pid(lock_fd: int) -> int | None:
+    os.lseek(lock_fd, 0, os.SEEK_SET)
+    data = os.read(lock_fd, 64).decode("ascii", errors="ignore").strip()
+
+    if not data:
+        return None
+
+    try:
+        return int(data)
+    except ValueError:
+        return None
+
+
+def write_lock_pid(lock_fd: int) -> None:
+    os.ftruncate(lock_fd, 0)
+    os.lseek(lock_fd, 0, os.SEEK_SET)
+    os.write(lock_fd, f"{os.getpid()}\n".encode("ascii"))
+
+
+def acquire_lock(replace: bool) -> int | None:
+    lock_fd = os.open(runtime_lock_path(), os.O_RDWR | os.O_CREAT, 0o600)
+
+    while True:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            write_lock_pid(lock_fd)
+            return lock_fd
+        except BlockingIOError:
+            old_pid = read_lock_pid(lock_fd)
+
+            if not replace:
+                print(
+                    "sway-mouse-flick is already running; use --replace to restart it",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                os.close(lock_fd)
+                return None
+
+            if old_pid and old_pid != os.getpid():
+                try:
+                    os.kill(old_pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    print(
+                        f"Could not stop existing daemon with pid {old_pid}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    os.close(lock_fd)
+                    return None
+
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    write_lock_pid(lock_fd)
+                    return lock_fd
+                except BlockingIOError:
+                    time.sleep(0.1)
+
+            print("Timed out waiting for the existing daemon to exit", file=sys.stderr)
+            os.close(lock_fd)
+            return None
+
+
+def discover_auto_devices(watched_by_path: dict[str, WatchedDevice], args) -> bool:
+    denied = False
+
+    for path in list_devices():
+        if path in watched_by_path:
+            continue
+
+        try:
+            watched = open_watched_device(path, args, require_mouse=True)
+        except PermissionError:
+            denied = True
+            continue
+        except OSError:
+            continue
+
+        if watched is None:
+            continue
+
+        watched_by_path[path] = watched
+        print(f"Listening on {watched.path}: {watched.device.name}", flush=True)
+
+    return denied
+
+
+def discover_requested_devices(
+    watched_by_path: dict[str, WatchedDevice], paths: list[str], args
+) -> bool:
+    opened_any = False
+
+    for path in paths:
+        if path in watched_by_path:
+            continue
+
+        try:
+            watched = open_watched_device(path, args, require_mouse=False)
+        except PermissionError:
+            print(
+                f"Permission denied reading {path}. Add your user to the input group "
+                "and log in again.",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
+        except OSError as error:
+            print(f"Cannot open {path}: {error}", file=sys.stderr, flush=True)
+            continue
+
+        watched_by_path[path] = watched
+        opened_any = True
+        print(f"Listening on {watched.path}: {watched.device.name}", flush=True)
+
+    return opened_any
+
+
+def remove_device(watched_by_path: dict[str, WatchedDevice], path: str) -> None:
+    watched = watched_by_path.pop(path, None)
+    if watched is None:
+        return
+
+    print(f"Stopped listening on {path}", flush=True)
+    close_device(watched.device)
+
+
+def read_available_events(watched: WatchedDevice):
+    try:
+        return watched.device.read()
+    except OSError as error:
+        print(f"Input device error on {watched.path}: {error}", file=sys.stderr, flush=True)
+        raise
+
+
+def run(args) -> int:
+    watched_by_path: dict[str, WatchedDevice] = {}
+    requested_paths = args.devices
+    auto_discover = not requested_paths
+    next_scan = 0.0
+    reported_auto_permission = False
+
+    if auto_discover:
+        print("Auto-discovering mouse input devices.", flush=True)
+    else:
+        print("Using explicitly configured mouse input device path(s).", flush=True)
+
+    try:
+        while True:
+            now = time.monotonic()
+            if now >= next_scan:
+                if auto_discover:
+                    denied = discover_auto_devices(watched_by_path, args)
+                    if denied and not watched_by_path and not reported_auto_permission:
+                        print(
+                            "Permission denied reading input devices. Add your user to "
+                            "the input group and log in again.",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        reported_auto_permission = True
+                else:
+                    discover_requested_devices(watched_by_path, requested_paths, args)
+
+                next_scan = now + args.scan_interval
+
+            if not watched_by_path:
+                time.sleep(args.scan_interval)
+                continue
+
+            timeout = max(0.1, min(args.scan_interval, next_scan - time.monotonic()))
+            devices = [watched.device for watched in watched_by_path.values()]
+
+            readable, _, _ = select.select(devices, [], [], timeout)
+
+            for device in readable:
+                watched = watched_by_path.get(device.path)
+                if watched is None:
+                    continue
+
+                try:
+                    events = read_available_events(watched)
+                except OSError:
+                    remove_device(watched_by_path, watched.path)
+                    continue
+
+                for event in events:
+                    watched.gesture.handle(event)
+
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        for path in list(watched_by_path):
+            remove_device(watched_by_path, path)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Switch Sway workspaces using middle-button horizontal mouse flicks. "
+            "With no device path, matching mice are discovered automatically."
+        )
+    )
+    parser.add_argument(
+        "devices",
+        nargs="*",
+        help="Optional input device path(s), for example /dev/input/by-id/...-event-mouse",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=int,
+        default=350,
+        help="Required accumulated horizontal movement; default: 350",
+    )
+    parser.add_argument(
+        "--max-vertical-ratio",
+        type=float,
+        default=0.8,
+        help="Maximum vertical movement relative to horizontal movement",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=0.8,
+        help="Maximum gesture duration in seconds; default: 0.8",
+    )
+    parser.add_argument(
+        "--scan-interval",
+        type=float,
+        default=2.0,
+        help="Seconds between auto-discovery scans; default: 2.0",
+    )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Stop any running daemon instance before starting",
+    )
+    parser.add_argument(
+        "--no-lock",
+        action="store_true",
+        help="Do not enforce a single daemon instance",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
+    lock_fd = None
+    if not args.no_lock:
+        lock_fd = acquire_lock(args.replace)
+        if lock_fd is None:
+            return 0
+
+    try:
+        return run(args)
+    finally:
+        if lock_fd is not None:
+            os.close(lock_fd)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
