@@ -82,7 +82,7 @@ ensure_input_group() {
         return
     fi
 
-    sudo usermod -aG input "$CURRENT_USER"
+    sudo usermod -aG input "$CURRENT_USER" || return 1
     INPUT_GROUP_ADDED=1
     echo "Added $CURRENT_USER to the input group"
 }
