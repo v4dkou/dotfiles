@@ -102,8 +102,9 @@ install_local_bins() {
     done
 }
 
-install_python_evdev
-ensure_input_group
+# Root-requiring steps are non-fatal so config links still apply without sudo
+install_python_evdev || echo "Skipped python-evdev install; sway-mouse-flick will not work until it is installed" >&2
+ensure_input_group || echo "Skipped input group setup; sway-mouse-flick needs it to read input devices" >&2
 install_local_bins
 mkdir -p "$HOME_CONFIG"
 
