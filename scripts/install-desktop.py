@@ -66,11 +66,23 @@ def install_theme():
     write(CONFIG / "environment.d/60-dotfiles-theme.conf", text)
     shell_file = CONFIG / "shell/desktop-theme.sh"
     write(shell_file, "# Managed by dotfiles setup.sh\n" + "".join(f"export {k}={v}\n" for k, v in values.items()))
+    write(CONFIG / "shell/terminal-startup.sh", '''# The first interactive terminal owns the clock; time.sh enforces the lock.
+case $- in
+    *i*)
+        if [ -t 1 ] && [ -x "$HOME/.local/bin/dotfiles-time" ]; then
+            ( "$HOME/.local/bin/dotfiles-time" --foreground </dev/null >/dev/tty 2>/dev/null & )
+        fi
+        ;;
+esac
+''')
 
     marker = "# BEGIN dotfiles desktop theme"
     block = (f'{marker}\n'
              'if [ -r "${XDG_CONFIG_HOME:-$HOME/.config}/shell/desktop-theme.sh" ]; then\n'
              '    . "${XDG_CONFIG_HOME:-$HOME/.config}/shell/desktop-theme.sh"\n'
+             'fi\n'
+             'if [ -r "${XDG_CONFIG_HOME:-$HOME/.config}/shell/terminal-startup.sh" ]; then\n'
+             '    . "${XDG_CONFIG_HOME:-$HOME/.config}/shell/terminal-startup.sh"\n'
              'fi\n# END dotfiles desktop theme\n')
     login = next((HOME_DIR / p for p in [".bash_profile", ".bash_login", ".profile"] if (HOME_DIR / p).exists()), HOME_DIR / ".profile")
     shells = {HOME_DIR / ".bashrc", login}
@@ -145,6 +157,32 @@ def main_browser_running(profile):
     return False
 
 
+def desired_browser_preferences(original, css):
+    data = json.loads(json.dumps(original))
+    portable = json.loads((SOURCE / "vivaldi/preferences.json").read_text())
+
+    def merge(target, values, path=()):
+        for key, value in values.items():
+            if path == ("vivaldi", "themes") and key == "user":
+                existing = target.setdefault(key, [])
+                for theme in value:
+                    match = next((t for t in existing if t.get("id") == theme["id"]), None)
+                    if match is None:
+                        existing.append(json.loads(json.dumps(theme)))
+                    else:
+                        merge(match, theme)
+            elif isinstance(value, dict):
+                if not isinstance(target.get(key), dict):
+                    target[key] = {}
+                merge(target[key], value, path + (key,))
+            else:
+                target[key] = value
+
+    merge(data, portable)
+    data.setdefault("vivaldi", {}).setdefault("appearance", {})["css_ui_mods_directory"] = str(css)
+    return data
+
+
 def install_vivaldi():
     css = CONFIG / "vivaldi-css"
     before = len(changed)
@@ -168,15 +206,15 @@ def install_vivaldi():
         if not profiles:
             continue
         if main_browser_running(root):
-            configured = all(p.exists() and json.loads(p.read_text()).get("vivaldi", {}).get("appearance", {}).get("css_ui_mods_directory") == str(css) for p in profiles)
+            configured = all(p.exists() and desired_browser_preferences(json.loads(p.read_text()), css) == json.loads(p.read_text()) for p in profiles)
             state = root / "Local State"
             labs = json.loads(state.read_text()).get("browser", {}).get("enabled_labs_experiments", []) if state.exists() else []
             override = HOME_DIR / ".local/share/flatpak/overrides/com.vivaldi.Vivaldi"
             granted = root == native or (override.exists() and str(css) + ":ro" in override.read_text())
             if configured and labs.count("vivaldi-css-mods@1") == 1 and not any(x.startswith("vivaldi-css-mods@") and x != "vivaldi-css-mods@1" for x in labs) and granted:
-                print("Vivaldi CSS already configured." if not css_changed else "Vivaldi CSS updated; restart Vivaldi to reload the changed styles.")
+                print("Vivaldi preferences already configured." if not css_changed else "Vivaldi CSS updated; restart Vivaldi to reload the changed styles.")
                 continue
-            print(f"Vivaldi is running ({root}); close it and rerun this script to activate the staged CSS.")
+            print(f"Vivaldi is running ({root}); close it and rerun the installer to apply the saved browser preferences.")
             deferred = True
             continue
         if root == flatpak:
@@ -191,8 +229,7 @@ def install_vivaldi():
                     raise RuntimeError(result.stderr.strip())
         for path in profiles:
             original = json.loads(path.read_text()) if path.exists() else {}
-            data = json.loads(json.dumps(original))
-            data.setdefault("vivaldi", {}).setdefault("appearance", {})["css_ui_mods_directory"] = str(css)
+            data = desired_browser_preferences(original, css)
             # Avoid formatting-only changes on subsequent runs.
             if original != data:
                 write(path, json.dumps(data, separators=(",", ":")) + "\n")

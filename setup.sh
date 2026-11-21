@@ -6,8 +6,8 @@ REPO_CONFIG="$REPO_DIR/.config"
 REPO_LOCAL_BIN="$REPO_DIR/.local/bin"
 HOME_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 HOME_LOCAL_BIN="$HOME/.local/bin"
-CURRENT_USER="${USER:-$(id -un)}"
-INPUT_GROUP_ADDED=0
+INPUT_GROUP_ADDED=${DOTFILES_INPUT_GROUP_ADDED:-0}
+BROWSER_DEFERRED=0
 
 if [ "$(id -u)" -eq 0 ]; then
     echo "Run setup.sh as your login user, not as root." >&2
@@ -41,48 +41,6 @@ link_path() {
     echo "Applied $label"
 }
 
-install_python_evdev() {
-    if python3 -c "import evdev" >/dev/null 2>&1; then
-        echo "python-evdev already installed"
-        return
-    fi
-
-    echo "Installing python-evdev dependency"
-
-    # Atomic (ostree) systems may still ship a dnf binary that refuses to install
-    if [ -e /run/ostree-booted ] && command -v rpm-ostree >/dev/null 2>&1; then
-        sudo rpm-ostree install --idempotent --apply-live python3-evdev
-    elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y python3-evdev
-    elif command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update
-        sudo apt-get install -y python3-evdev
-    elif command -v pacman >/dev/null 2>&1; then
-        sudo pacman -S --needed python-evdev
-    elif command -v zypper >/dev/null 2>&1; then
-        sudo zypper install -y python3-evdev
-    else
-        echo "Could not find a supported package manager for python-evdev" >&2
-        echo "Install python-evdev manually before using sway-mouse-flick" >&2
-    fi
-}
-
-ensure_input_group() {
-    if ! getent group input >/dev/null 2>&1; then
-        echo "No input group found; skipping input group membership setup" >&2
-        return
-    fi
-
-    if id -nG "$CURRENT_USER" | tr ' ' '\n' | grep -qx input; then
-        echo "$CURRENT_USER already belongs to the input group"
-        return
-    fi
-
-    sudo usermod -aG input "$CURRENT_USER" || return 1
-    INPUT_GROUP_ADDED=1
-    echo "Added $CURRENT_USER to the input group"
-}
-
 install_local_bins() {
     [ -d "$REPO_LOCAL_BIN" ] || return
 
@@ -96,17 +54,17 @@ install_local_bins() {
 
         link_path "$SOURCE" "$TARGET" "$NAME"
     done
+
+    link_path "$REPO_DIR/time.sh" "$HOME_LOCAL_BIN/dotfiles-time" "terminal clock"
 }
 
-# Root-requiring steps are non-fatal so config links still apply without sudo
-install_python_evdev || echo "Skipped python-evdev install; sway-mouse-flick will not work until it is installed" >&2
-ensure_input_group || echo "Skipped input group setup; sway-mouse-flick needs it to read input devices" >&2
 install_local_bins
 python3 "$REPO_DIR/scripts/install-desktop.py" "$REPO_DIR" || {
     result=$?
     if [ "$result" -ne 3 ]; then
         exit "$result"
     fi
+    BROWSER_DEFERRED=1
 }
 mkdir -p "$HOME_CONFIG"
 
@@ -127,4 +85,9 @@ fi
 
 if [ "$INPUT_GROUP_ADDED" -eq 1 ]; then
     echo "Log out completely and log back in before sway-mouse-flick can read input devices."
+fi
+
+if [ "$BROWSER_DEFERRED" -eq 1 ]; then
+    echo "Close Vivaldi and rerun the installer to finish applying browser preferences." >&2
+    exit 3
 fi

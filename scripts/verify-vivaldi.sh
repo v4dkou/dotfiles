@@ -33,10 +33,12 @@ cleanup() {
 }
 trap cleanup EXIT
 printf 'output HEADLESS-1 resolution 1280x800\noutput * bg #222222 solid_color\nseat seat0 fallback true\ndefault_border none\nxwayland disable\n' > "$scratch/sway.conf"
-python3 - "$scratch" <<'PY'
+python3 - "$scratch" "$repo_dir" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
-(p/'profile/Default/Preferences').write_text(json.dumps({'vivaldi': {'appearance': {'css_ui_mods_directory': str(p/'css'), 'density': True}, 'windows': {'use_native_decoration': False}}}))
+preferences=json.loads((pathlib.Path(sys.argv[2])/'vivaldi/preferences.json').read_text())
+preferences['vivaldi']['appearance']['css_ui_mods_directory']=str(p/'css')
+(p/'profile/Default/Preferences').write_text(json.dumps(preferences))
 (p/'profile/Local State').write_text(json.dumps({'browser': {'enabled_labs_experiments': ['vivaldi-css-mods@1']}}))
 PY
 env XDG_RUNTIME_DIR="$scratch/runtime" WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \

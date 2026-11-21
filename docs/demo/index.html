@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link id="favicon" rel="icon" type="image/svg+xml">
+<title>dotfiles / quiet desktop</title>
+<style>
+  :root {color-scheme:dark; font-family:system-ui,sans-serif; background:#121212; color:#e8e8e6}
+  * {box-sizing:border-box}
+  body {margin:0; min-height:100vh; display:flex; align-items:center}
+  main {width:100%; max-width:1080px; margin:auto; padding:46px 55px}
+  .eyebrow {font:13px monospace; color:#a3b99a; letter-spacing:3px; text-transform:uppercase}
+  h1 {font-size:clamp(40px,5.4vw,72px); font-weight:550; letter-spacing:-3px; margin:24px 0 14px; line-height:1.1}
+  .intro {font-size:clamp(18px,2vw,25px); color:#999; max-width:760px; line-height:1.55}
+  .features {display:grid; grid-template-columns:1fr 1fr; gap:30px 46px; margin:42px 0}
+  h2 {font-size:18px; font-weight:550; margin:0 0 8px}
+  p {margin:0; color:#999; line-height:1.6; font-size:15px}
+  code {font-family:monospace; color:#d8e3d4}
+  footer {padding-top:22px; border-top:1px solid #333; font-size:14px; color:#aaa; line-height:1.6}
+  #chapter {color:#d8e3d4}
+  @media(max-width:900px) {main {padding:35px} .features {gap:24px; margin:28px 0} h1 {letter-spacing:-2px} .intro {font-size:19px}}
+</style>
+<main>
+  <div class="eyebrow">Fedora / Sway / Vivaldi / Foot</div>
+  <h1>Only your work.</h1>
+  <p class="intro">A minimal desktop. No panel or tray.<br>You keep the workspace map.</p>
+  <div class="features">
+    <section><h2>Tabs you already know</h2><p>Click to select. Scroll to switch.<br>Middle-click to close — windows, too.</p></section>
+    <section><h2>Color, when you need it</h2><p>Favicons stay grayscale.<br>Hover the tab strip to reveal their colors.</p></section>
+    <section><h2>Room for the page</h2><p>One browser tab hides the header.<br>More tabs bring it back.</p></section>
+    <section><h2>Controls on demand</h2><p><code>pavucontrol</code> · <code>nmcli</code><br><code>bluetoothctl</code></p></section>
+  </div>
+  <footer><span id="chapter">01 / One tab. The page gets the whole window.</span><br>Dark by default. Tile your windows. Keep track of your spaces.</footer>
+</main>
+<script>
+  const topic=new URLSearchParams(location.search).get('topic')||'Docs';
+  const colors={Docs:'#4285f4',Notes:'#34a853',Mail:'#faac20'};
+  const color=colors[topic]||colors.Docs;
+  const glyph={Docs:'M9 8h14v16H9z M13 12h6 M13 16h6 M13 20h4',Notes:'M9 9h14v14H9z M12 14l3 3 6-6',Mail:'M7 10h18v13H7z M7 10l9 7 9-7'}[topic];
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color}"/><path d="${glyph}" fill="none" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  document.querySelector('#favicon').href='data:image/svg+xml,'+encodeURIComponent(svg);
+  document.title=topic+' / dotfiles';
+</script>
+</html>

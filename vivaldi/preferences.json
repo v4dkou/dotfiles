@@ -1,0 +1,103 @@
+{
+  "vivaldi": {
+    "tabs": {
+      "at_edge": true,
+      "confirm_closing_tabs": true,
+      "counter_detection": false,
+      "horizontal_scrolling": false,
+      "stacking": {
+        "mode": 1
+      },
+      "visible": true,
+      "visual_switch": {
+        "enable": false,
+        "list_layout": false
+      }
+    },
+    "mouse_wheel": {
+      "tab_switch": true
+    },
+    "appearance": {
+      "density": false,
+      "disable_title_bar": true,
+      "force_dark_mode_theme": false
+    },
+    "menu": {
+      "compact": false,
+      "display": 0
+    },
+    "status_bar": {
+      "display": 1,
+      "minimized": 0
+    },
+    "windows": {
+      "linux_alt_controls": false,
+      "show_window_close_confirmation_dialog": false,
+      "use_native_decoration": true
+    },
+    "address_bar": {
+      "visible": false
+    },
+    "bookmarks": {
+      "bar": {
+        "visible": false
+      }
+    },
+    "panels": {
+      "window_defaults": {
+        "barVisible": false,
+        "contentVisible": false
+      },
+      "position": 0,
+      "show_toggle": false,
+      "as_overlay": {
+        "enabled": false
+      }
+    },
+    "theme": {
+      "simple_scrollbar": true,
+      "schedule": {
+        "o_s": {
+          "dark": "Vivaldi2",
+          "light": "89a0a680-ead9-4cf2-a28e-592076ee1d91"
+        }
+      }
+    },
+    "toolbars": {
+      "tabbar_after": [
+        "NewTab",
+        "FlexibleSpacer",
+        "AccountButton"
+      ],
+      "tabbar_before": []
+    },
+    "themes": {
+      "user": [
+        {
+          "accentFromPage": false,
+          "accentOnWindow": false,
+          "accentSaturationLimit": 1,
+          "alpha": 1,
+          "backgroundImage": "",
+          "blur": 0,
+          "colorAccentBg": "#4b4c53",
+          "colorBg": "#36363a",
+          "colorFg": "#d3d9e3",
+          "colorHighlightBg": "#47b1e6",
+          "colorWindowBg": "#1D1E21",
+          "contrast": 5,
+          "dimBlurred": false,
+          "engineVersion": 1,
+          "id": "89a0a680-ead9-4cf2-a28e-592076ee1d91",
+          "name": "Dark copy",
+          "preferSystemAccent": false,
+          "radius": 14,
+          "simpleScrollbar": true,
+          "transparencyTabBar": true,
+          "transparencyTabs": true,
+          "version": 1
+        }
+      ]
+    }
+  }
+}

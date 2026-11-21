@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# One terminal command for either the native browser or Fedora's Flatpak build.
+set -e
+if [[ -x /usr/bin/vivaldi-stable ]]; then
+    exec /usr/bin/vivaldi-stable "$@"
+elif [[ -x /usr/bin/vivaldi ]]; then
+    exec /usr/bin/vivaldi "$@"
+else
+    exec flatpak run com.vivaldi.Vivaldi --ozone-platform=wayland "$@"
+fi
