@@ -106,6 +106,12 @@ install_local_bins() {
 install_python_evdev || echo "Skipped python-evdev install; sway-mouse-flick will not work until it is installed" >&2
 ensure_input_group || echo "Skipped input group setup; sway-mouse-flick needs it to read input devices" >&2
 install_local_bins
+python3 "$REPO_DIR/scripts/install-desktop.py" "$REPO_DIR" || {
+    result=$?
+    if [ "$result" -ne 3 ]; then
+        exit "$result"
+    fi
+}
 mkdir -p "$HOME_CONFIG"
 
 for SOURCE in "$REPO_CONFIG"/*; do

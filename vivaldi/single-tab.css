@@ -1,5 +1,15 @@
-/* Hide the top tab row when there is an active tab
-   but no inactive tabs. Intended for unstacked tabs. */
+/* Hide the header when there is an active tab but no inactive tabs.
+   Intended for unstacked top tabs.
+
+   Keep the header measurable: Vivaldi 8.3 virtualizes tabs when its width
+   becomes zero. display:none removes .tab, invalidating this selector and
+   repeatedly showing/hiding the header. Move it out of flow instead. */
 #browser.tabs-top:has(#tabs-container .tab):not(:has(#tabs-container .tab:not(.active))) #header {
-    display: none !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: translateY(-100%) !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
