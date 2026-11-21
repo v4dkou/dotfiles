@@ -65,7 +65,7 @@ def install_theme():
     values = dict(line.split("=", 1) for line in text.splitlines() if line and not line.startswith("#"))
     write(CONFIG / "environment.d/60-dotfiles-theme.conf", text)
     shell_file = CONFIG / "shell/desktop-theme.sh"
-    write(shell_file, "# Managed by dotfiles sync-desktop.sh\n" + "".join(f"export {k}={v}\n" for k, v in values.items()))
+    write(shell_file, "# Managed by dotfiles setup.sh\n" + "".join(f"export {k}={v}\n" for k, v in values.items()))
 
     marker = "# BEGIN dotfiles desktop theme"
     block = (f'{marker}\n'
@@ -153,16 +153,22 @@ def install_vivaldi():
     css_changed = len(changed) != before
     native = CONFIG / "vivaldi"
     flatpak = HOME_DIR / ".var/app/com.vivaldi.Vivaldi/config/vivaldi"
+    available = {
+        native: bool(shutil.which("vivaldi") or shutil.which("vivaldi-stable")),
+        flatpak: bool(shutil.which("flatpak") and run("flatpak", "info", "com.vivaldi.Vivaldi").returncode == 0),
+    }
     deferred = False
     for root in [native, flatpak]:
-        if not root.is_dir():
+        if not root.is_dir() and not available[root]:
             continue
-        profiles = [p / "Preferences" for p in root.iterdir() if p.name == "Default" or p.name.startswith("Profile ")]
+        profiles = [p / "Preferences" for p in root.iterdir() if p.name == "Default" or p.name.startswith("Profile ")] if root.is_dir() else []
         profiles = [p for p in profiles if p.is_file()]
+        if not profiles and available[root]:
+            profiles = [root / "Default/Preferences"]
         if not profiles:
             continue
         if main_browser_running(root):
-            configured = all(json.loads(p.read_text()).get("vivaldi", {}).get("appearance", {}).get("css_ui_mods_directory") == str(css) for p in profiles)
+            configured = all(p.exists() and json.loads(p.read_text()).get("vivaldi", {}).get("appearance", {}).get("css_ui_mods_directory") == str(css) for p in profiles)
             state = root / "Local State"
             labs = json.loads(state.read_text()).get("browser", {}).get("enabled_labs_experiments", []) if state.exists() else []
             override = HOME_DIR / ".local/share/flatpak/overrides/com.vivaldi.Vivaldi"
@@ -184,10 +190,11 @@ def install_vivaldi():
                 if result.returncode:
                     raise RuntimeError(result.stderr.strip())
         for path in profiles:
-            data = json.loads(path.read_text())
+            original = json.loads(path.read_text()) if path.exists() else {}
+            data = json.loads(json.dumps(original))
             data.setdefault("vivaldi", {}).setdefault("appearance", {})["css_ui_mods_directory"] = str(css)
             # Avoid formatting-only changes on subsequent runs.
-            if json.loads(path.read_text()) != data:
+            if original != data:
                 write(path, json.dumps(data, separators=(",", ":")) + "\n")
         local_state = root / "Local State"
         data = json.loads(local_state.read_text()) if local_state.exists() else {}

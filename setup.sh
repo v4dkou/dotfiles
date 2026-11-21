@@ -4,7 +4,7 @@ set -e
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_CONFIG="$REPO_DIR/.config"
 REPO_LOCAL_BIN="$REPO_DIR/.local/bin"
-HOME_CONFIG="$HOME/.config"
+HOME_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 HOME_LOCAL_BIN="$HOME/.local/bin"
 CURRENT_USER="${USER:-$(id -un)}"
 INPUT_GROUP_ADDED=0
@@ -17,7 +17,7 @@ fi
 backup_target() {
     local target="$1"
     local label="$2"
-    local backup="$target.backup.$(date +%s)"
+    local backup="$target.backup.$(date +%s%N)"
 
     mv "$target" "$backup"
     echo "Backed up existing $label to $backup"
@@ -28,21 +28,17 @@ link_path() {
     local target="$2"
     local label="$3"
 
-    if [ -e "$target" ] && [ ! -L "$target" ]; then
+    if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
+        echo "$label already linked, skipping"
+        return
+    fi
+
+    if [ -e "$target" ] || [ -L "$target" ]; then
         backup_target "$target" "$label"
     fi
 
-    if [ -L "$target" ]; then
-        if [ "$(readlink "$target")" = "$source" ]; then
-            echo "$label already linked, skipping"
-        else
-            ln -sfn "$source" "$target"
-            echo "Updated $label link"
-        fi
-    else
-        ln -s "$source" "$target"
-        echo "Applied $label"
-    fi
+    ln -s "$source" "$target"
+    echo "Applied $label"
 }
 
 install_python_evdev() {
