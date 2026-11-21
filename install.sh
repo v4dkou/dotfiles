@@ -19,11 +19,15 @@ install_requirements() {
         return 1
     fi
 
-    local packages=(git python3 curl sway sway-config-fedora foot rofi-wayland
+    local packages=(sway sway-config-fedora foot rofi-wayland
         swaybg swaylock swayidle grim slurp grimshot wf-recorder wl-clipboard jq
         python3-evdev pavucontrol NetworkManager bluez xdg-utils util-linux
         procps-ng gsettings-desktop-schemas xdg-desktop-portal-wlr xdg-desktop-portal-gtk
         pulseaudio-utils cmus qt5-qtbase-gui qt6-qtbase-gui)
+    local tool
+    for tool in git python3 curl; do
+        command -v "$tool" >/dev/null || packages+=("$tool")
+    done
     if ! native_vivaldi_installed; then
         packages+=(flatpak)
     fi
